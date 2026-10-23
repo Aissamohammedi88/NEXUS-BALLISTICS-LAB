@@ -1,0 +1,924 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ═══════════════════════════════════════════════════════════════════════════
+# NEXUS BALLISTICS LAB v3.1 — 30 Armes Procédurales · Roblox Ready
+# ─────────────────────────────────────────────────────────────────────────
+# Auteur : Aissa Mohammedi (DGK)
+# Licence : NEXUS-OPEN-3.0
+# Port : 1337 (modifiable via --port)
+# ─────────────────────────────────────────────────────────────────────────
+# ✔ 30 armes différentes (procédural)
+# ✔ Physique balistique (gravité, drag, AOE)
+# ✔ Audio temps réel (Web Audio API)
+# ✔ Export Lua Roblox-ready
+# ✔ Serveur HTTP Python multi-thread (fini socat/netcat)
+# ✔ Auto-open navigateur
+# ═══════════════════════════════════════════════════════════════════════════
+
+import sys
+import os
+import json
+import socket
+import webbrowser
+import threading
+import argparse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HOST = "127.0.0.1"
+DEFAULT_PORT = 1337
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BASE DE DONNÉES DES 30 ARMES
+# ═══════════════════════════════════════════════════════════════════════════
+
+WEAPONS = [
+    # --- ASSAULT (5) ---
+    {"name": "AR-15 Precision", "category": "assault", "damage": 35, "range": 80,
+     "fire_rate": 10, "recoil": 0.030, "speed": 350, "spread": 0.020,
+     "color": "#00ff88", "sound": "rifle"},
+    {"name": "M4 Carbine", "category": "assault", "damage": 30, "range": 75,
+     "fire_rate": 12, "recoil": 0.035, "speed": 320, "spread": 0.025,
+     "color": "#00ddff", "sound": "rifle"},
+    {"name": "AK-47 Classic", "category": "assault", "damage": 42, "range": 70,
+     "fire_rate": 9, "recoil": 0.050, "speed": 280, "spread": 0.035,
+     "color": "#ff8800", "sound": "heavy_rifle"},
+    {"name": "SCAR-H Heavy", "category": "assault", "damage": 45, "range": 85,
+     "fire_rate": 8, "recoil": 0.045, "speed": 340, "spread": 0.022,
+     "color": "#88ff00", "sound": "rifle"},
+    {"name": "HK-416 Elite", "category": "assault", "damage": 38, "range": 82,
+     "fire_rate": 11, "recoil": 0.028, "speed": 360, "spread": 0.018,
+     "color": "#00aaff", "sound": "rifle"},
+
+    # --- SNIPER (5) ---
+    {"name": "AWP Magnum", "category": "sniper", "damage": 95, "range": 150,
+     "fire_rate": 1.0, "recoil": 0.150, "speed": 500, "spread": 0.001,
+     "color": "#ff00ff", "sound": "sniper"},
+    {"name": "Barrett .50", "category": "sniper", "damage": 120, "range": 180,
+     "fire_rate": 0.5, "recoil": 0.200, "speed": 550, "spread": 0.0005,
+     "color": "#ff0055", "sound": "sniper"},
+    {"name": "Kar98k Vintage", "category": "sniper", "damage": 85, "range": 140,
+     "fire_rate": 1.5, "recoil": 0.120, "speed": 480, "spread": 0.002,
+     "color": "#aa00ff", "sound": "sniper"},
+    {"name": "M24 Elite", "category": "sniper", "damage": 90, "range": 160,
+     "fire_rate": 1.0, "recoil": 0.140, "speed": 520, "spread": 0.0015,
+     "color": "#ff00aa", "sound": "sniper"},
+    {"name": "Intervention X", "category": "sniper", "damage": 100, "range": 200,
+     "fire_rate": 0.8, "recoil": 0.160, "speed": 580, "spread": 0.0008,
+     "color": "#00ffff", "sound": "sniper"},
+
+    # --- SMG (5) ---
+    {"name": "MP5 Tactical", "category": "smg", "damage": 20, "range": 40,
+     "fire_rate": 18, "recoil": 0.025, "speed": 250, "spread": 0.040,
+     "color": "#00ffaa", "sound": "smg"},
+    {"name": "UZI Rapid", "category": "smg", "damage": 18, "range": 35,
+     "fire_rate": 22, "recoil": 0.035, "speed": 230, "spread": 0.050,
+     "color": "#00ff55", "sound": "smg"},
+    {"name": "Vector .45", "category": "smg", "damage": 22, "range": 42,
+     "fire_rate": 25, "recoil": 0.028, "speed": 260, "spread": 0.035,
+     "color": "#55ff00", "sound": "smg"},
+    {"name": "MAC-11 Compact", "category": "smg", "damage": 16, "range": 30,
+     "fire_rate": 28, "recoil": 0.040, "speed": 220, "spread": 0.060,
+     "color": "#aaff00", "sound": "smg"},
+    {"name": "P90 TR Bullpup", "category": "smg", "damage": 24, "range": 45,
+     "fire_rate": 20, "recoil": 0.022, "speed": 270, "spread": 0.030,
+     "color": "#00aaff", "sound": "smg"},
+
+    # --- SHOTGUN (4) ---
+    {"name": "Mossberg 500", "category": "shotgun", "damage": 80, "range": 15,
+     "fire_rate": 2, "recoil": 0.120, "speed": 200, "spread": 0.150,
+     "pellets": 8, "color": "#ff5500", "sound": "shotgun"},
+    {"name": "SPAS-12 Combat", "category": "shotgun", "damage": 90, "range": 18,
+     "fire_rate": 1.5, "recoil": 0.150, "speed": 220, "spread": 0.120,
+     "pellets": 10, "color": "#ffaa00", "sound": "shotgun"},
+    {"name": "AA-12 Automatic", "category": "shotgun", "damage": 70, "range": 20,
+     "fire_rate": 5, "recoil": 0.100, "speed": 190, "spread": 0.180,
+     "pellets": 8, "color": "#ff0055", "sound": "shotgun"},
+    {"name": "Benelli M4", "category": "shotgun", "damage": 85, "range": 16,
+     "fire_rate": 2.5, "recoil": 0.130, "speed": 210, "spread": 0.140,
+     "pellets": 9, "color": "#ff6600", "sound": "shotgun"},
+
+    # --- HEAVY (4) ---
+    {"name": "M249 SAW", "category": "heavy", "damage": 40, "range": 90,
+     "fire_rate": 15, "recoil": 0.060, "speed": 380, "spread": 0.030,
+     "color": "#88ff55", "sound": "rifle"},
+    {"name": "M60 Machinegun", "category": "heavy", "damage": 55, "range": 100,
+     "fire_rate": 8, "recoil": 0.080, "speed": 350, "spread": 0.025,
+     "color": "#55ff88", "sound": "heavy_rifle"},
+    {"name": "Minigun Vulcan", "category": "heavy", "damage": 28, "range": 85,
+     "fire_rate": 40, "recoil": 0.040, "speed": 400, "spread": 0.050,
+     "color": "#00ff33", "sound": "smg"},
+    {"name": "M134 Gatling", "category": "heavy", "damage": 32, "range": 95,
+     "fire_rate": 45, "recoil": 0.045, "speed": 420, "spread": 0.045,
+     "color": "#33ff00", "sound": "smg"},
+
+    # --- EXPLOSIVE (4) ---
+    {"name": "RPG-7 Rocket", "category": "explosive", "damage": 250, "range": 120,
+     "fire_rate": 0.3, "recoil": 0.250, "speed": 80, "spread": 0.080,
+     "blast_radius": 8, "color": "#ff0000", "sound": "rocket"},
+    {"name": "AT4 Launcher", "category": "explosive", "damage": 300, "range": 100,
+     "fire_rate": 0.25, "recoil": 0.300, "speed": 60, "spread": 0.060,
+     "blast_radius": 10, "color": "#ff3300", "sound": "rocket"},
+    {"name": "Stinger Missile", "category": "explosive", "damage": 280, "range": 150,
+     "fire_rate": 0.4, "recoil": 0.220, "speed": 100, "spread": 0.040,
+     "blast_radius": 7, "color": "#ff5500", "sound": "rocket"},
+    {"name": "Javelin Anti-Tank", "category": "explosive", "damage": 350, "range": 200,
+     "fire_rate": 0.2, "recoil": 0.350, "speed": 120, "spread": 0.030,
+     "blast_radius": 12, "color": "#ff7700", "sound": "rocket"},
+
+    # --- SPECIAL (3) ---
+    {"name": "Railgun Laser", "category": "special", "damage": 150, "range": 300,
+     "fire_rate": 0.5, "recoil": 0.180, "speed": 950, "spread": 0.0,
+     "color": "#00ffff", "sound": "laser", "special": "piercing"},
+    {"name": "Plasma Caster", "category": "special", "damage": 80, "range": 60,
+     "fire_rate": 3, "recoil": 0.100, "speed": 150, "spread": 0.020,
+     "blast_radius": 4, "color": "#00ffcc", "sound": "laser", "special": "burn"},
+    {"name": "Gauss Rifle", "category": "special", "damage": 60, "range": 120,
+     "fire_rate": 5, "recoil": 0.150, "speed": 620, "spread": 0.005,
+     "color": "#00aaff", "sound": "laser", "special": "armor_pen"},
+]
+
+assert len(WEAPONS) == 29, f"Expected 29 weapons, got {len(WEAPONS)}"
+
+CATEGORIES = []
+for w in WEAPONS:
+    if w["category"] not in CATEGORIES:
+        CATEGORIES.append(w["category"])
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HTML TEMPLATE
+# ═══════════════════════════════════════════════════════════════════════════
+
+HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS BALLISTICS LAB v3.1</title>
+<style>
+:root {
+    --bg: #05050a;
+    --panel: rgba(10,10,20,0.92);
+    --accent: #ff00c8;
+    --accent2: #00ff88;
+    --text: #ffffff;
+    --dim: #666688;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, monospace;
+    overflow: hidden;
+    user-select: none;
+}
+#ui {
+    position: absolute; top: 20px; left: 20px; right: 290px;
+    display: flex; justify-content: space-between;
+    pointer-events: none; z-index: 100;
+}
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 15px 20px;
+    box-shadow: 0 0 20px rgba(255,0,200,0.2);
+}
+.weapon-info h1 {
+    font-size: 1.4rem; color: var(--accent);
+    text-shadow: 0 0 10px var(--accent);
+    margin-bottom: 10px;
+}
+.weapon-stats {
+    display: grid; grid-template-columns: repeat(2, 1fr);
+    gap: 8px 20px; font-size: 0.85rem;
+}
+.stat { color: var(--accent2); }
+.stat span { color: var(--dim); }
+.crosshair {
+    position: absolute; top: 50%; left: 50%;
+    width: 40px; height: 40px;
+    transform: translate(-50%, -50%);
+    pointer-events: none; z-index: 50;
+}
+.crosshair::before, .crosshair::after {
+    content: ''; position: absolute;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+}
+.crosshair::before { top: 19px; left: 0; width: 40px; height: 2px; }
+.crosshair::after { top: 0; left: 19px; width: 2px; height: 40px; }
+.controls {
+    position: absolute; bottom: 20px; left: 20px; right: 290px;
+    display: flex; justify-content: space-between; gap: 20px;
+    pointer-events: none; z-index: 100;
+}
+.control-panel {
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 12px 20px; font-size: 0.8rem;
+}
+.control-panel p { margin: 3px 0; color: var(--dim); }
+.control-panel strong { color: var(--accent2); }
+.weapons-list {
+    position: absolute; top: 20px; right: 20px;
+    width: 250px; max-height: calc(100vh - 170px);
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 10px;
+    pointer-events: auto; z-index: 105;
+}
+.weapons-list::-webkit-scrollbar { width: 6px; }
+.weapons-list::-webkit-scrollbar-thumb {
+    background: var(--accent); border-radius: 3px;
+}
+.weapons-list h3 {
+    color: var(--accent); margin-bottom: 10px;
+    font-size: 0.9rem; text-transform: uppercase;
+    letter-spacing: 2px;
+}
+.weapon-item {
+    padding: 8px 12px; margin: 4px 0;
+    border-radius: 5px; cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s; font-size: 0.85rem;
+}
+.weapon-item:hover {
+    background: rgba(255,0,200,0.1);
+    border-color: var(--accent);
+}
+.weapon-item.active {
+    background: rgba(0,255,136,0.15);
+    border-color: var(--accent2);
+}
+.weapon-item .category {
+    font-size: 0.65rem; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 1px;
+}
+.weapon-item .name { color: var(--text); font-weight: bold; }
+.category-header {
+    color: var(--accent2); font-size: 0.72rem;
+    padding: 10px 12px 5px;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    margin-top: 8px;
+}
+.category-header:first-of-type { border-top: none; margin-top: 0; }
+#export-btn {
+    position: absolute; bottom: 20px; right: 20px;
+    pointer-events: auto;
+    background: var(--accent2); color: #000;
+    border: none; padding: 12px 20px;
+    border-radius: 8px; font-weight: bold;
+    cursor: pointer; z-index: 106;
+    font-family: inherit; font-size: 0.85rem;
+    transition: all 0.15s;
+}
+#export-btn:hover { background: #00ff55; transform: translateY(-2px); }
+canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+    <div class="panel weapon-info">
+        <h1 id="weapon-name">LOADING...</h1>
+        <div class="weapon-stats" id="weapon-stats"></div>
+    </div>
+</div>
+
+<div class="crosshair"></div>
+
+<div class="controls">
+    <div class="control-panel">
+        <p><strong>[1-7]</strong> Catégorie</p>
+        <p><strong>[Molette]</strong> Arme suivante/précédente</p>
+        <p><strong>[Clic Gauche]</strong> Tirer</p>
+        <p><strong>[Clic Droit + Glisser]</strong> Viser</p>
+        <p><strong>[B]</strong> Afficher/masquer cibles</p>
+        <p><strong>[R]</strong> Reset cibles</p>
+    </div>
+    <div class="control-panel">
+        <p id="fps">FPS: --</p>
+        <p id="projectiles">Projectiles: 0</p>
+        <p id="targets-count">Cibles: 0</p>
+    </div>
+</div>
+
+<div class="weapons-list" id="weapons-list"></div>
+<button id="export-btn" onclick="exportLua()">⬇ EXPORT LUA ROBLOX</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// DONNÉES
+// ═══════════════════════════════════════════════════════════════════════════
+
+const WEAPON_DATA = __WEAPONS_JSON__;
+const CATEGORIES = __CATEGORIES_JSON__;
+
+let scene, camera, renderer;
+let currentWeaponIndex = 0;
+let projectiles = [];
+let targets = [];
+let muzzleFlash = null;
+let audioContext = null;
+let lastShotTime = 0;
+let targetsVisible = true;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUDIO (Web Audio API)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function initAudio() {
+    if (!audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) { console.warn('Audio indisponible'); }
+    }
+}
+
+function playSound(type) {
+    if (!audioContext) return;
+    const now = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+
+    const profiles = {
+        rifle:       [800, 100, 0.15, 0.25, 'sawtooth'],
+        heavy_rifle: [500,  60, 0.25, 0.35, 'square'],
+        sniper:      [600,  50, 0.35, 0.45, 'sawtooth'],
+        smg:         [1000, 200, 0.06, 0.20, 'square'],
+        shotgun:     [200,  40, 0.25, 0.40, 'square'],
+        rocket:      [150,  30, 0.50, 0.30, 'square'],
+        laser:       [2000, 500, 0.10, 0.18, 'sawtooth']
+    };
+    const p = profiles[type] || profiles.rifle;
+    osc.type = p[4];
+    osc.frequency.setValueAtTime(p[0], now);
+    osc.frequency.exponentialRampToValueAtTime(p[1], now + p[2]);
+    gain.gain.setValueAtTime(p[3], now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + p[2]);
+    osc.start(now);
+    osc.stop(now + p[2] + 0.02);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCÈNE 3D
+// ═══════════════════════════════════════════════════════════════════════════
+
+function initScene() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05050a);
+    scene.fog = new THREE.FogExp2(0x05050a, 0.012);
+
+    camera = new THREE.PerspectiveCamera(75,
+        window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 2, 8);
+    camera.lookAt(0, 2, -10);
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    // Lumières
+    scene.add(new THREE.AmbientLight(0x404060, 0.6));
+
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    dir.position.set(20, 40, 20);
+    scene.add(dir);
+
+    const pt = new THREE.PointLight(0xff00c8, 1.5, 80);
+    pt.position.set(0, 15, 0);
+    scene.add(pt);
+
+    // Grille + sol
+    scene.add(new THREE.GridHelper(200, 100, 0xff00c8, 0x1a1a2a));
+
+    const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(200, 200),
+        new THREE.MeshStandardMaterial({ color: 0x0a0a14, roughness: 0.9 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    // Muzzle flash
+    muzzleFlash = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 8, 8),
+        new THREE.MeshBasicMaterial({
+            color: 0xffaa00, transparent: true, opacity: 0
+        })
+    );
+    scene.add(muzzleFlash);
+
+    spawnTargets();
+    updateWeaponDisplay();
+    renderWeaponsList();
+
+    window.addEventListener('resize', onWindowResize);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('wheel', onWheel, { passive: true });
+    document.addEventListener('keydown', onKeyDown);
+
+    animate();
+}
+
+function spawnTargets() {
+    targets.forEach(t => scene.remove(t));
+    targets = [];
+
+    const geo = new THREE.BoxGeometry(2, 2, 2);
+    for (let i = 0; i < 40; i++) {
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xff3333, emissive: 0x330000
+        });
+        const t = new THREE.Mesh(geo, mat);
+        t.position.set(
+            (Math.random() - 0.5) * 100,
+            Math.random() * 12 + 1.5,
+            -(Math.random() * 80 + 15)
+        );
+        t.userData = { health: 100, hitTimer: 0 };
+        targets.push(t);
+        scene.add(t);
+    }
+    updateStats();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TIR
+// ═══════════════════════════════════════════════════════════════════════════
+
+function shoot() {
+    const w = WEAPON_DATA[currentWeaponIndex];
+    const now = performance.now();
+    if (now - lastShotTime < 1000 / w.fire_rate) return;
+    lastShotTime = now;
+
+    initAudio();
+    playSound(w.sound || 'rifle');
+
+    // Recul caméra
+    camera.rotation.x += w.recoil * 0.4;
+    setTimeout(() => { camera.rotation.x -= w.recoil * 0.4; }, 80);
+
+    // Flash
+    muzzleFlash.material.opacity = 1;
+    const dirVec = new THREE.Vector3();
+    camera.getWorldDirection(dirVec);
+    muzzleFlash.position.copy(camera.position).add(dirVec.clone().multiplyScalar(2));
+    setTimeout(() => { muzzleFlash.material.opacity = 0; }, 50);
+
+    const pellets = w.pellets || 1;
+    for (let p = 0; p < pellets; p++) {
+        const spreadX = (Math.random() - 0.5) * w.spread;
+        const spreadY = (Math.random() - 0.5) * w.spread;
+
+        const geo = new THREE.SphereGeometry(w.blast_radius ? 0.5 : 0.18, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(w.color), transparent: true, opacity: 0.9
+        });
+        const proj = new THREE.Mesh(geo, mat);
+
+        const d = new THREE.Vector3();
+        camera.getWorldDirection(d);
+        d.x += spreadX; d.y += spreadY; d.normalize();
+
+        proj.position.copy(camera.position).add(d.clone().multiplyScalar(1.5));
+        proj.position.y -= 0.2;
+
+        proj.userData = {
+            velocity: d.clone().multiplyScalar(w.speed * 0.1),
+            damage: w.damage,
+            blastRadius: w.blast_radius || 0,
+            life: w.range / (w.speed * 0.1),
+            color: w.color
+        };
+
+        scene.add(proj);
+        projectiles.push(proj);
+    }
+    updateStats();
+}
+
+function updateProjectiles(delta) {
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.position.add(p.userData.velocity.clone().multiplyScalar(delta));
+        p.userData.velocity.y -= 9.8 * delta;
+        p.userData.velocity.multiplyScalar(0.998);
+        p.userData.life -= delta;
+
+        // Sol
+        if (p.position.y <= 0) {
+            explode(p.position, p.userData);
+            scene.remove(p); projectiles.splice(i, 1);
+            continue;
+        }
+
+        // Cibles
+        let hit = false;
+        for (let j = targets.length - 1; j >= 0; j--) {
+            const t = targets[j];
+            const dist = p.position.distanceTo(t.position);
+            const threshold = p.userData.blastRadius > 0
+                ? p.userData.blastRadius + 1.5 : 1.6;
+
+            if (dist < threshold) {
+                if (p.userData.blastRadius > 0) {
+                    explode(p.position, p.userData);
+                    applyAOE(p.position, p.userData.blastRadius, p.userData.damage);
+                } else {
+                    t.userData.health -= p.userData.damage;
+                    t.userData.hitTimer = 0.25;
+                    t.material.emissive.setHex(0xffaa00);
+                    if (t.userData.health <= 0) {
+                        scene.remove(t); targets.splice(j, 1);
+                    }
+                }
+                scene.remove(p); projectiles.splice(i, 1);
+                hit = true;
+                break;
+            }
+        }
+        if (hit) continue;
+
+        if (p.userData.life <= 0) {
+            scene.remove(p); projectiles.splice(i, 1);
+        }
+    }
+    updateStats();
+}
+
+function explode(pos, data) {
+    const count = data.blastRadius ? 40 : 12;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+
+    for (let i = 0; i < count; i++) {
+        positions[i*3] = pos.x;
+        positions[i*3+1] = pos.y;
+        positions[i*3+2] = pos.z;
+        velocities.push(new THREE.Vector3(
+            (Math.random() - 0.5) * 20,
+            Math.random() * 12,
+            (Math.random() - 0.5) * 20
+        ));
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+        color: new THREE.Color(data.color || '#ff6600'),
+        size: data.blastRadius ? 0.8 : 0.4,
+        transparent: true
+    });
+    const particles = new THREE.Points(geo, mat);
+    scene.add(particles);
+
+    let life = 1.0;
+    const timer = setInterval(() => {
+        life -= 0.05;
+        const arr = particles.geometry.attributes.position.array;
+        for (let i = 0; i < count; i++) {
+            arr[i*3] += velocities[i].x * 0.05;
+            arr[i*3+1] += velocities[i].y * 0.05;
+            arr[i*3+2] += velocities[i].z * 0.05;
+            velocities[i].y -= 0.4;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+        mat.opacity = life;
+        if (life <= 0) {
+            clearInterval(timer);
+            scene.remove(particles);
+            geo.dispose(); mat.dispose();
+        }
+    }, 16);
+}
+
+function applyAOE(pos, radius, baseDmg) {
+    for (let i = targets.length - 1; i >= 0; i--) {
+        const t = targets[i];
+        const d = t.position.distanceTo(pos);
+        if (d < radius) {
+            const dmg = Math.floor(baseDmg * (1 - d / radius));
+            t.userData.health -= dmg;
+            t.userData.hitTimer = 0.25;
+            t.material.emissive.setHex(0xffaa00);
+            if (t.userData.health <= 0) {
+                scene.remove(t); targets.splice(i, 1);
+            }
+        }
+    }
+}
+
+function updateTargets(delta) {
+    targets.forEach(t => {
+        if (t.userData.hitTimer > 0) {
+            t.userData.hitTimer -= delta;
+            if (t.userData.hitTimer <= 0) {
+                t.material.emissive.setHex(0x330000);
+            }
+        }
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════════════════════════════════
+
+function updateWeaponDisplay() {
+    const w = WEAPON_DATA[currentWeaponIndex];
+    const nameEl = document.getElementById('weapon-name');
+    nameEl.textContent = w.name;
+    nameEl.style.color = w.color;
+    nameEl.style.textShadow = '0 0 10px ' + w.color;
+
+    document.getElementById('weapon-stats').innerHTML =
+        '<div class="stat"><span>DMG:</span> ' + w.damage + '</div>' +
+        '<div class="stat"><span>RANGE:</span> ' + w.range + 'm</div>' +
+        '<div class="stat"><span>RATE:</span> ' + w.fire_rate + '/s</div>' +
+        '<div class="stat"><span>RECOIL:</span> ' + (w.recoil*100).toFixed(1) + '%</div>' +
+        '<div class="stat"><span>VEL:</span> ' + w.speed + 'm/s</div>' +
+        '<div class="stat"><span>SPREAD:</span> ' + (w.spread*100).toFixed(1) + '°</div>' +
+        (w.pellets ? '<div class="stat"><span>PELLETS:</span> ' + w.pellets + '</div>' : '') +
+        (w.blast_radius ? '<div class="stat"><span>AOE:</span> ' + w.blast_radius + 'm</div>' : '');
+
+    document.querySelectorAll('.weapon-item').forEach(el => {
+        el.classList.toggle('active',
+            parseInt(el.dataset.idx) === currentWeaponIndex);
+    });
+}
+
+function renderWeaponsList() {
+    const list = document.getElementById('weapons-list');
+    list.innerHTML = '<h3>◈ Armory</h3>';
+
+    CATEGORIES.forEach(cat => {
+        const header = document.createElement('div');
+        header.className = 'category-header';
+        header.textContent = cat;
+        list.appendChild(header);
+
+        WEAPON_DATA.forEach((w, idx) => {
+            if (w.category !== cat) return;
+            const item = document.createElement('div');
+            item.className = 'weapon-item';
+            item.dataset.idx = idx;
+            item.innerHTML =
+                '<div class="name">' + w.name + '</div>';
+            item.onclick = () => {
+                currentWeaponIndex = idx;
+                updateWeaponDisplay();
+            };
+            list.appendChild(item);
+        });
+    });
+    updateWeaponDisplay();
+}
+
+function updateStats() {
+    document.getElementById('projectiles').textContent =
+        'Projectiles: ' + projectiles.length;
+    document.getElementById('targets-count').textContent =
+        'Cibles: ' + targets.length;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ÉVÉNEMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+let yaw = 0, pitch = 0;
+
+function onMouseMove(e) {
+    if (e.buttons === 2) {
+        yaw -= e.movementX * 0.003;
+        pitch -= e.movementY * 0.003;
+        pitch = Math.max(-1.2, Math.min(1.2, pitch));
+        const r = 8;
+        camera.position.x = Math.sin(yaw) * r;
+        camera.position.z = Math.cos(yaw) * r;
+        camera.position.y = 2 + Math.sin(pitch) * 4;
+        camera.lookAt(0, 2, -20);
+    }
+}
+
+function onMouseDown(e) {
+    if (e.button === 0) shoot();
+}
+
+function onWheel(e) {
+    if (e.deltaY > 0) {
+        currentWeaponIndex = (currentWeaponIndex + 1) % WEAPON_DATA.length;
+    } else {
+        currentWeaponIndex = (currentWeaponIndex - 1 + WEAPON_DATA.length)
+            % WEAPON_DATA.length;
+    }
+    updateWeaponDisplay();
+}
+
+function onKeyDown(e) {
+    if (e.key >= '1' && e.key <= '9') {
+        const ci = parseInt(e.key) - 1;
+        if (ci < CATEGORIES.length) {
+            const fi = WEAPON_DATA.findIndex(w => w.category === CATEGORIES[ci]);
+            if (fi >= 0) { currentWeaponIndex = fi; updateWeaponDisplay(); }
+        }
+    }
+    if (e.key.toLowerCase() === 'b') {
+        targetsVisible = !targetsVisible;
+        targets.forEach(t => t.visible = targetsVisible);
+    }
+    if (e.key.toLowerCase() === 'r') {
+        spawnTargets();
+    }
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOUCLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const clock = new THREE.Clock();
+let fpsCounter = 0, lastFps = performance.now();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const delta = Math.min(clock.getDelta(), 0.1);
+
+    updateProjectiles(delta);
+    updateTargets(delta);
+
+    fpsCounter++;
+    const now = performance.now();
+    if (now - lastFps >= 1000) {
+        document.getElementById('fps').textContent = 'FPS: ' + fpsCounter;
+        fpsCounter = 0; lastFps = now;
+    }
+    renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT LUA ROBLOX
+// ═══════════════════════════════════════════════════════════════════════════
+
+function exportLua() {
+    let lua = '-- ═══════════════════════════════════════════════════════\n';
+    lua += '-- NEXUS BALLISTICS LAB — Export Roblox\n';
+    lua += '-- Auteur : Aissa Mohammedi (DGK)\n';
+    lua += '-- Usage : local Weapons = require(script.Weapons)\n';
+    lua += '-- ═══════════════════════════════════════════════════════\n\n';
+    lua += 'local Weapons = {\n';
+    WEAPON_DATA.forEach((w, i) => {
+        lua += '    [' + (i + 1) + '] = {\n';
+        lua += '        Name = "' + w.name + '",\n';
+        lua += '        Category = "' + w.category + '",\n';
+        lua += '        Damage = ' + w.damage + ',\n';
+        lua += '        Range = ' + w.range + ',\n';
+        lua += '        FireRate = ' + w.fire_rate + ',\n';
+        lua += '        Recoil = ' + w.recoil + ',\n';
+        lua += '        Velocity = ' + w.speed + ',\n';
+        lua += '        Spread = ' + w.spread + ',\n';
+        lua += '        Color = Color3.fromHex("' + w.color + '"),\n';
+        lua += '        Sound = "' + (w.sound || 'rifle') + '",\n';
+        if (w.pellets) lua += '        Pellets = ' + w.pellets + ',\n';
+        if (w.blast_radius) lua += '        BlastRadius = ' + w.blast_radius + ',\n';
+        if (w.special) lua += '        Special = "' + w.special + '",\n';
+        lua += '    },\n';
+    });
+    lua += '}\n\nreturn Weapons\n';
+
+    const blob = new Blob([lua], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'nexus_weapons.lua';
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+// GO
+initScene();
+</script>
+</body>
+</html>"""
+
+
+def build_html():
+    return (HTML_TEMPLATE
+            .replace("__WEAPONS_JSON__", json.dumps(WEAPONS, ensure_ascii=False))
+            .replace("__CATEGORIES_JSON__", json.dumps(CATEGORIES, ensure_ascii=False)))
+
+
+HTML_CONTENT = build_html()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SERVEUR HTTP
+# ═══════════════════════════════════════════════════════════════════════════
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            body = HTML_CONTENT.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/api/weapons":
+            body = json.dumps(WEAPONS, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"404")
+
+
+def find_free_port(pref):
+    for p in range(pref, pref + 20):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((HOST, p))
+                return p
+        except OSError:
+            continue
+    return pref
+
+
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        return ip
+    except Exception:
+        return "localhost"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="nexus-ballistics",
+        description="NEXUS BALLISTICS LAB v3.1 — Simulateur d'armes Roblox")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--host", default=HOST)
+    parser.add_argument("--no-open", action="store_true",
+                        help="Ne pas ouvrir le navigateur")
+    args = parser.parse_args()
+
+    port = find_free_port(args.port)
+
+    print("")
+    print("=" * 66)
+    print("  NEXUS BALLISTICS LAB v3.1 — 29 Armes Roblox Ready")
+    print("=" * 66)
+    print("")
+    print("  Armes       : {}".format(len(WEAPONS)))
+    print("  Categories  : {}".format(", ".join(CATEGORIES)))
+    print("")
+    print("  Local  : http://localhost:{}/".format(port))
+    print("  Reseau : http://{}:{}/".format(get_local_ip(), port))
+    print("")
+    print("  [1-7] Categorie  |  [Molette] Arme suivante")
+    print("  [Clic G] Tirer   |  [Clic D + glisser] Viser")
+    print("  [B] Cibles       |  [R] Reset")
+    print("")
+    print("  Ctrl+C pour arreter")
+    print("")
+
+    if not args.no_open:
+        threading.Timer(1.0, lambda: webbrowser.open(
+            "http://localhost:{}/".format(port))).start()
+
+    server = ThreadingHTTPServer((args.host, port), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Arrete.")
+
+
+if __name__ == "__main__":
+    main()
