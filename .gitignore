@@ -1,18 +1,31 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEXUS BALLISTICS LAB — .gitignore
+# Auteur : Aissa Mohammedi (DGK) — NEXUS-OPEN-3.0
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Other files and folders
-.settings/
+# --- Système ---
+.DS_Store
+Thumbs.db
+*.log
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
+# --- NEXUS Output / Temp ---
+nexus_weapon_lab.html
+/tmp/nexus_*
+*.pid
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# --- IDE / Editeurs ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Environnements virtuels (si tu ajoutes du Python plus tard) ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- Dépendances Node (si tu migres vers un bundler) ---
+node_modules/
+package-lock.json
+yarn.lock
